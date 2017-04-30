@@ -2,7 +2,7 @@
 
 set -e
 
-WORKKING_DIR=~/efind-build
+WORKING_DIR=~/efind-build
 PKG_DIR=~/efind-pkg
 DOWNLOAD_URL=http://efind.dixieflatline.de/downloads/source
 
@@ -16,17 +16,17 @@ declare -a Packages
 
 cleanup()
 {
-	echo "Cleaning directory:" $WORKKING_DIR
+	echo "Cleaning directory:" $WORKING_DIR
 
-	rm $WORKKING_DIR/*.* -fr
+	rm $WORKING_DIR/*.* -fr
 }
 
 prepare_directories()
 {
-	echo "Preparing working directory:" $WORKKING_DIR
+	echo "Preparing working directory:" $WORKING_DIR
 
-	if [ ! -d $WORKKING_DIR ]; then
-		mkdir $WORKKING_DIR
+	if [ ! -d $WORKING_DIR ]; then
+		mkdir $WORKING_DIR
 	fi
 
 	echo "Testing package directory:" $PKG_DIR
@@ -42,7 +42,7 @@ download_tarballs()
 {
 	echo "Downloading tarballs..."
 
-	cd $WORKKING_DIR
+	cd $WORKING_DIR
 
 	for tarball in ${TARBALLS[@]}
 	do
@@ -53,7 +53,7 @@ download_tarballs()
 
 build_deb()
 {
-	cd $WORKKING_DIR
+	cd $WORKING_DIR
 
 	echo "Extracting and renaming tarball:" $1
 	tar -xf $1
@@ -65,16 +65,54 @@ build_deb()
 	dpkg-buildpackage -uc -us
 	debfile=`cat debian/files | cut -d" " -f1`
 
-	cd $WORKKING_DIR
+	cd $WORKING_DIR
 	echo "Moving package to" $PKG_DIR
 	mv $debfile $PKG_DIR/
 	Packages=(${Packages[@]} $debfile)
+}
+
+build_rpm()
+{
+	cd $WORKING_DIR
+
+	echo "Copying source file:" $1
+	cp $1 ~/rpm/SOURCES
+
+	echo "Extracting tarball:" $1
+	tar -xf $1
+
+	specfile=`ls ${1%.tar.xz}/*spec`
+	echo "Copying spec file:" $specfile
+	cp $specfile ~/rpm/SPECS/
+
+	echo "Building rpm..."
+	cd ~/rpm
+	if [ -x /usr/bin/lsb_release ]; then
+		lsb_release -a | grep -q SUSE
+
+		if [ $? -eq 0 ]; then
+			echo "Updating dependencies for OpenSUSE"
+
+			if [ $(basename $specfile) == "efind-gdkpixbuf.spec" ]; then
+				sed "s/gdk-pixbuf2/gdk-pixbuf/" SPECS/efind-gdkpixbuf.spec -i
+			fi
+		fi
+	fi
+
+	rpmbuild -ba SPECS/`basename $specfile`
+
+	echo "Moving package to" $PKG_DIR
+	rpmfile=~/rpm/RPMS/`arch`/`echo $1 | sed "s/.tar.xz/*.rpm/"`
+	mv $rpmfile $PKG_DIR
+	Packages=(${Packages[@]} `basename $rpmfile`)
 }
 
 build_package()
 {
 	if [ -x /usr/bin/dpkg-buildpackage ]; then
 		build_deb $tarball
+	elif [ -x /usr/bin/rpmbuild ]; then
+		build_rpm $tarball
 	fi
 }
 
@@ -85,14 +123,17 @@ install_packages()
 		do
 			sudo dpkg -i $PKG_DIR/$pkg
 		done
+	elif [ -x /bin/rpm ]; then
+		for pkg in ${Packages[@]}
+		do
+			sudo rpm -i $PKG_DIR/$pkg
+		done
 	fi
 }
 
 run_test()
 {
-	echo "Running test-suite..."
-
-	cd $WORKKING_DIR/${1%.tar.xz}/test
+	cd $WORKING_DIR/${1%.tar.xz}/test
 	./run.sh
 }
 
