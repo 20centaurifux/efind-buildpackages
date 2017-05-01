@@ -139,10 +139,41 @@ build_txz()
 	Packages=(${Packages[@]} $txz)
 }
 
+build_pkg()
+{
+	cd $WORKING_DIR
+
+	build=./${1%.tar.xz}
+	testdir=./${1%.tar.xz}/test
+
+	echo "Extracting PKGBUILD and test directory from" $1
+	tar -xf $1 $build/PKGBUILD $testdir
+
+	echo "Moving tarball to build folder" $build
+	cp $1 $build
+
+	cd $build
+
+	echo "Updating MD5 sum"
+	chk=$(md5sum $1 | cut -d' ' -f1)
+	sed -r "s/md5sums=\(''\)/md5sums=\('$chk'\)/" PKGBUILD -i
+
+	echo "Building package..."
+	makepkg
+
+	echo "Moving package to" $PKG_DIR
+	pkg=${1%.tar.xz}-*.pkg.tar.xz
+	mv $pkg $PKG_DIR
+
+	Packages=(${Packages[@]} $pkg)
+}
+
 build_package()
 {
 	if [ -f /etc/slackware-version ]; then
 		build_txz $tarball
+	elif [ -f /etc/arch-release ]; then
+		build_pkg $tarball
 	elif [ -x /usr/bin/dpkg-buildpackage ]; then
 		build_deb $tarball
 	elif [ -x /usr/bin/rpmbuild ]; then
@@ -156,6 +187,11 @@ install_packages()
 		for pkg in ${Packages[@]}
 		do
 			sudo installpkg $PKG_DIR/$pkg
+		done
+	elif [ -f /etc/arch-release ]; then
+		for pkg in ${Packages[@]}
+		do
+			sudo pacman -U $PKG_DIR/$pkg
 		done
 	elif [ -x /usr/bin/dpkg ]; then
 		for pkg in ${Packages[@]}
