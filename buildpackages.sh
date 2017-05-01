@@ -68,6 +68,7 @@ build_deb()
 	cd $WORKING_DIR
 	echo "Moving package to" $PKG_DIR
 	mv $debfile $PKG_DIR/
+
 	Packages=(${Packages[@]} $debfile)
 }
 
@@ -81,7 +82,7 @@ build_rpm()
 	echo "Extracting tarball:" $1
 	tar -xf $1
 
-	specfile=`ls ${1%.tar.xz}/*spec`
+	specfile=`ls ${1%.tar.xz}/*.spec`
 	echo "Copying spec file:" $specfile
 	cp $specfile ~/rpm/SPECS/
 
@@ -104,12 +105,45 @@ build_rpm()
 	echo "Moving package to" $PKG_DIR
 	rpmfile=~/rpm/RPMS/`arch`/`echo $1 | sed "s/.tar.xz/*.rpm/"`
 	mv $rpmfile $PKG_DIR
+
 	Packages=(${Packages[@]} `basename $rpmfile`)
+}
+
+build_txz()
+{
+	cd $WORKING_DIR
+
+	sb=./${1%.tar.xz}/SlackBuild
+	testdir=./${1%.tar.xz}/test
+
+	echo "Extracting SlackBuild:" $1
+	tar -xf $1 $sb $testdir
+
+	echo "Moving tarball to SlackBuild folder" $sb
+	mv $1 $sb
+
+	echo "Running SlackBuild script..."
+	cd $sb
+	sudo sh ./*.SlackBuild
+
+	echo "Moving package to" $PKG_DIR
+	txz=${1%.tar.xz}-$(arch)*_bbsb.txz
+
+	sudo mv /tmp/$txz $PKG_DIR/
+
+	echo "Changing ownership:" $username":"$group
+	username=`id -un`
+	group=`id -gn`
+	sudo chown $username:$group $PKG_DIR/$txz
+
+	Packages=(${Packages[@]} $txz)
 }
 
 build_package()
 {
-	if [ -x /usr/bin/dpkg-buildpackage ]; then
+	if [ -f /etc/slackware-version ]; then
+		build_txz $tarball
+	elif [ -x /usr/bin/dpkg-buildpackage ]; then
 		build_deb $tarball
 	elif [ -x /usr/bin/rpmbuild ]; then
 		build_rpm $tarball
@@ -118,7 +152,12 @@ build_package()
 
 install_packages()
 {
-	if [ -x /usr/bin/dpkg ]; then
+	if [ -f /etc/slackware-version ]; then
+		for pkg in ${Packages[@]}
+		do
+			sudo installpkg $PKG_DIR/$pkg
+		done
+	elif [ -x /usr/bin/dpkg ]; then
 		for pkg in ${Packages[@]}
 		do
 			sudo dpkg -i $PKG_DIR/$pkg
