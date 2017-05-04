@@ -1,24 +1,62 @@
 #!/bin/bash
-
 set -e
 
 WORKING_DIR=~/efind-build
 PKG_DIR=~/efind-pkg
-DOWNLOAD_URL=http://efind.dixieflatline.de/downloads/source
+RUN_PATH=$PWD
+RPMBUILD_PATH=~/rpm
 
-EFIND_TARBALL=efind-0.1.0.tar.xz
-EFIND_GDKPIXBUF_TARBALL=efind-gdkpixbuf-0.1.0.tar.xz
-EFIND_TAGLIB_TARBALL=efind-taglib-0.1.0.tar.xz
-
-TARBALLS=($EFIND_TARBALL $EFIND_GDKPIXBUF_TARBALL $EFIND_TAGLIB_TARBALL)
-
+declare -a Available
+declare -a Install
 declare -a Packages
+declare Platform=''
 
-cleanup()
+die()
 {
-	echo "Cleaning directory:" $WORKING_DIR
+	echo $1 && exit 1
+}
 
-	rm $WORKING_DIR/*.* -fr
+detect_platform()
+{
+	if [ -f /etc/slackware-version ]; then
+		Platform=txz
+	elif [ -f /etc/arch-release ]; then
+		Platform=arch
+	elif [ -x /usr/bin/dpkg-buildpackage ]; then
+		Platform=dpkg
+	elif [ -x /usr/bin/rpmbuild ]; then
+		Platform=rpm
+	else
+		die "Couldn't detect platform."
+	fi
+}
+
+load_sources()
+{
+	while read -r tarball
+	do
+		Available=(${Available[@]} $tarball)
+	done < SOURCES
+}
+
+select_sources()
+{
+	local -a options
+	local i=1
+
+	for src in ${Available[@]}
+	do
+		options=(${options[@]} $i $(basename $src) on)
+		i=$((i+1))
+	done
+
+	local cmd=(dialog --separate-output --checklist "Please select the sources you want to build" 16 80 16)
+	local choices=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
+
+	for choice in $choices
+	do
+		Install=(${Install[@]} ${Available[((choice-1))]})
+	done
 }
 
 prepare_directories()
@@ -27,43 +65,59 @@ prepare_directories()
 
 	if [ ! -d $WORKING_DIR ]; then
 		mkdir $WORKING_DIR
+	else
+		rm $WORKING_DIR/*.* -fr
 	fi
 
 	echo "Testing package directory:" $PKG_DIR
 
 	if [ ! -d $PKG_DIR ]; then
 		mkdir $PKG_DIR
+	else
+		rm $PKG_DIR/*.* -fr
 	fi
-
-	cleanup
 }
 
-download_tarballs()
+download_tarball()
 {
-	echo "Downloading tarballs..."
+	local tarball=$1
+
+	echo "Downloading sources:" $tarball
+	cd $WORKING_DIR && wget $tarball
+}
+
+extract_tarball()
+{
+	local tarball=$1
+
+	echo "Extracting tarball:" $tarball
 
 	cd $WORKING_DIR
+	tar -xf $tarball
 
-	for tarball in ${TARBALLS[@]}
-	do
-		echo "Getting" $tarball
-		wget $DOWNLOAD_URL/$tarball
-	done
+	local fix=$RUN_PATH/FIXES/${tarball%.tar.xz}.sh
+
+	if [ -x $fix ]; then
+		echo "Running fix:" $fix
+		$fix
+	fi
 }
 
 build_deb()
 {
 	cd $WORKING_DIR
 
-	echo "Extracting and renaming tarball:" $1
-	tar -xf $1
-	orig=`echo $1 | sed -r "s/(.*)-([0-9]{1,2})\.([0-9]{1,2})\..*/\1_\2.\3.orig.tar.xz/"`
-	mv $1 $orig
+	local tarball=$1
+
+	echo "Copying tarball..." $tarball
+	local orig=`echo $tarball | sed -r "s/(.*)-([0-9]{1,2})\.([0-9]{1,2})\..*/\1_\2.\3.orig.tar.xz/"`
+	cp $tarball $orig
+	echo "Tarball copdied successfully:" $orig
 
 	echo "Building package..."
-	cd ${1%.tar.xz}
+	cd ${tarball%.tar.xz}
 	dpkg-buildpackage -uc -us
-	debfile=`cat debian/files | cut -d" " -f1`
+	local debfile=`cat debian/files | cut -d" " -f1`
 
 	cd $WORKING_DIR
 	echo "Moving package to" $PKG_DIR
@@ -76,64 +130,49 @@ build_rpm()
 {
 	cd $WORKING_DIR
 
-	echo "Copying source file:" $1
-	cp $1 ~/rpm/SOURCES
+	local tarball=$1
 
-	echo "Extracting tarball:" $1
-	tar -xf $1
+	echo "Copying source file:" $tarball
+	cp $tarball $RPMBUILD_PATH/SOURCES
 
-	specfile=`ls ${1%.tar.xz}/*.spec`
+	local specfile=$(ls -1 ${tarball%.tar.xz}/*.spec)
 	echo "Copying spec file:" $specfile
-	cp $specfile ~/rpm/SPECS/
+	cp $specfile $RPMBUILD_PATH/SPECS/
 
 	echo "Building rpm..."
-	cd ~/rpm
-	if [ -x /usr/bin/lsb_release ]; then
-		lsb_release -a | grep -q SUSE
-
-		if [ $? -eq 0 ]; then
-			echo "Updating dependencies for OpenSUSE"
-
-			if [ $(basename $specfile) == "efind-gdkpixbuf.spec" ]; then
-				sed "s/gdk-pixbuf2/gdk-pixbuf/" SPECS/efind-gdkpixbuf.spec -i
-			fi
-		fi
-	fi
-
-	rpmbuild -ba SPECS/`basename $specfile`
+	cd $RPMBUILD_PATH
+	rpmbuild -ba SPECS/$(basename $specfile)
 
 	echo "Moving package to" $PKG_DIR
-	rpmfile=~/rpm/RPMS/`arch`/`echo $1 | sed "s/.tar.xz/*.rpm/"`
+	local rpmfile=$(ls -1 $RPMBUILD_PATH/RPMS/$(arch)/$(echo $tarball | sed "s/.tar.xz/*.$(arch).rpm/"))
 	mv $rpmfile $PKG_DIR
 
-	Packages=(${Packages[@]} `basename $rpmfile`)
+	Packages=(${Packages[@]} $(basename $rpmfile))
 }
 
 build_txz()
 {
 	cd $WORKING_DIR
 
-	sb=./${1%.tar.xz}/SlackBuild
-	testdir=./${1%.tar.xz}/test
-
-	echo "Extracting SlackBuild:" $1
-	tar -xf $1 $sb $testdir
+	local tarball=$1
+	local sb=./${tarball%.tar.xz}/SlackBuild
 
 	echo "Moving tarball to SlackBuild folder" $sb
-	mv $1 $sb
+	mv $tarball $sb
 
 	echo "Running SlackBuild script..."
 	cd $sb
 	sudo sh ./*.SlackBuild
 
 	echo "Moving package to" $PKG_DIR
-	txz=${1%.tar.xz}-$(arch)*_bbsb.txz
+	local txz=$(basename $(ls -1 /tmp/${tarball%.tar.xz}-$(arch)*_bbsb.txz))
 
 	sudo mv /tmp/$txz $PKG_DIR/
 
+	local username=`id -un`
+	local group=`id -gn`
+
 	echo "Changing ownership:" $username":"$group
-	username=`id -un`
-	group=`id -gn`
 	sudo chown $username:$group $PKG_DIR/$txz
 
 	Packages=(${Packages[@]} $txz)
@@ -143,26 +182,22 @@ build_pkg()
 {
 	cd $WORKING_DIR
 
-	build=./${1%.tar.xz}
-	testdir=./${1%.tar.xz}/test
+	local tarball=$1
+	local build=./${tarball%.tar.xz}
 
-	echo "Extracting PKGBUILD and test directory from" $1
-	tar -xf $1 $build/PKGBUILD $testdir
-
-	echo "Moving tarball to build folder" $build
-	cp $1 $build
-
-	cd $build
+	echo "Copying tarball to build folder" $build
+	cp $tarball $build
 
 	echo "Updating MD5 sum"
-	chk=$(md5sum $1 | cut -d' ' -f1)
+	cd $build
+	local chk=$(md5sum $tarball | cut -d' ' -f1)
 	sed -r "s/md5sums=\(''\)/md5sums=\('$chk'\)/" PKGBUILD -i
 
 	echo "Building package..."
 	makepkg
 
 	echo "Moving package to" $PKG_DIR
-	pkg=${1%.tar.xz}-*.pkg.tar.xz
+	local pkg=`ls -1 ${tarball%.tar.xz}-*.pkg.tar.xz`
 	mv $pkg $PKG_DIR
 
 	Packages=(${Packages[@]} $pkg)
@@ -170,66 +205,144 @@ build_pkg()
 
 build_package()
 {
-	if [ -f /etc/slackware-version ]; then
-		build_txz $tarball
-	elif [ -f /etc/arch-release ]; then
-		build_pkg $tarball
-	elif [ -x /usr/bin/dpkg-buildpackage ]; then
-		build_deb $tarball
-	elif [ -x /usr/bin/rpmbuild ]; then
-		build_rpm $tarball
-	fi
+	local tarball=$1
+
+	echo "Building package..."
+
+	case $Platform in
+		arch) cmd=build_pkg
+		;;
+
+		txz) cmd=build_txz
+		;;
+
+		rpm) cmd=build_rpm
+		;;
+
+		dpkg) cmd=build_deb
+		;;
+	esac
+
+	extract_tarball $tarball && $cmd $tarball
 }
 
-install_packages()
+run_test_suite()
 {
-	if [ -f /etc/slackware-version ]; then
-		for pkg in ${Packages[@]}
-		do
-			sudo installpkg $PKG_DIR/$pkg
-		done
-	elif [ -f /etc/arch-release ]; then
-		for pkg in ${Packages[@]}
-		do
-			sudo pacman -U $PKG_DIR/$pkg
-		done
-	elif [ -x /usr/bin/dpkg ]; then
-		for pkg in ${Packages[@]}
-		do
-			sudo dpkg -i $PKG_DIR/$pkg
-		done
-	elif [ -x /bin/rpm ]; then
-		for pkg in ${Packages[@]}
-		do
-			sudo rpm -i $PKG_DIR/$pkg
-		done
+	local pkg=$1
+	local testdir=$2
+
+	set +e
+	dialog --title "Run test suite" --backtitle "$pkg" --yesno "Do you want to run the test-suite of the installed package?" 7 70
+	local result=$?
+	set -e
+
+	if [ $result -eq 0 ]; then
+		echo "Running test-suite in directory" $testdir
+		cd $testdir && ./run.sh
+
+		echo -n "[Press any key to continue]"
+		read -s -n1
 	fi
 }
 
-run_test()
+install_package()
 {
-	cd $WORKING_DIR/${1%.tar.xz}/test
-	./run.sh
+	local pkg=$1
+	local tarball=$2
+
+	set +e
+	dialog --title "Install package" --backtitle "$1" --yesno "Do you want to install the package '$1' on your system?" 7 70
+	local result=$?
+	set -e
+
+	if [ $result -eq 0 ]; then
+		case $Platform in
+			arch) cmd=(pacman -U --noconfirm)
+			;;
+
+			txz) cmd=(/sbin/installpkg)
+			;;
+
+			rpm) cmd=(rpm -i --replacepkgs)
+			;;
+
+			dpkg) cmd=(dpkg -i)
+			;;
+		esac
+
+		sudo ${cmd[@]} $PKG_DIR/$pkg
+
+		local testdir=$WORKING_DIR/${tarball%.tar.xz}/test
+
+		if [ -d $testdir ] && [ -x $testdir/run.sh ]; then
+			run_test_suite $pkg $testdir
+		fi
+	fi
 }
 
-prepare_directories && download_tarballs
+run_post_processing_scripts()
+{
+	local -a options
+	local i=1
 
-for tarball in ${TARBALLS[@]}
-do
-	build_package $tarball
-done
+	for script in `ls -1 $RUN_PATH/AFTER`
+	do
+		if [ -x $RUN_PATH/AFTER/$script ]; then
+			options=(${options[@]} $i $script on)
+			i=$((i+1))
+		fi
+	done
 
-read -p "Install built packages (y/n)?" choice
+	if [ ${#options[@]} -ne 0 ]; then
+		local cmd=(dialog --separate-output --checklist "Please select the post-processing scripts you want to run:" 16 60 16)
+		local choices=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
 
-if [ $choice == "y" ]; then
-	install_packages
+		set +e
 
-	read -p "Run tests (y/n)?" choice
-
-	if [ $choice == "y" ]; then
-		for tarball in ${TARBALLS[@]}
+		for choice in $choices
 		do
-			run_test $tarball
+			local script=${options[((choice-1))*3+1]}
+			local cmd="$RUN_PATH/AFTER/$script"
+			local -a files
+
+			for file in ${Packages[@]}; do
+				files=(${files[@]} "$PKG_DIR/$file")
+			done
+
+			$cmd "${files[@]}"
+
+			if [ $? -ne 0 ]; then
+				dialog --title "Post processing" --backtitle "$script" --yesno "Script failed, do you want to continue?" 7 60
+
+				if [ $? -ne 0 ]; then
+					break
+				fi
+			fi
 		done
+
+		set -e
 	fi
+}
+
+build_and_install_packages()
+{
+	for tarball in ${Install[@]}; do
+		local name=$(basename $tarball)
+
+		download_tarball $tarball
+		build_package $name
+		install_package ${Packages[-1]} $name
+	done
+
+	if [ ${#Packages[@]} -ne 0 ]; then
+		run_post_processing_scripts
+	fi
+}
+
+detect_platform && load_sources && select_sources
+
+if [ ${#Install[@]} -ne 0 ]; then
+	prepare_directories
+	build_and_install_packages
+	dialog --msgbox "Build finished." 7 20 && clear
 fi
