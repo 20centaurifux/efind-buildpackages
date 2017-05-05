@@ -4,13 +4,13 @@ This dialog-driven script can be used to create packages of
 [efind](https://github.com/20centaurifux/efind) and related extensions. It's
 tested with
 
-    * Arch
-    * CentOS
-    * Debian
-    * Fedora
-    * OpenSUSE
-    * Slackware
-    * Ubuntu
+* Arch
+* CentOS
+* Debian
+* Fedora
+* OpenSUSE
+* Slackware
+* Ubuntu
 
 Starting the script it lets you choose the tarballs you want to download
 and create packages from. The locations are loaded from the SOURCES file.
