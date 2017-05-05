@@ -88,7 +88,7 @@ prepare_directories()
 	if [ ! -d $WORKING_DIR ]; then
 		mkdir $WORKING_DIR
 	else
-		rm $WORKING_DIR/*.* -fr
+		rm $WORKING_DIR/* -fr
 	fi
 
 	echo "Testing package directory:" $PKG_DIR
@@ -96,7 +96,7 @@ prepare_directories()
 	if [ ! -d $PKG_DIR ]; then
 		mkdir $PKG_DIR
 	else
-		rm $PKG_DIR/*.* -fr
+		rm $PKG_DIR/* -fr
 	fi
 }
 
