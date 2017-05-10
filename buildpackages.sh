@@ -134,7 +134,7 @@ build_deb()
 	echo "Copying tarball..." $tarball
 	local orig=`echo $tarball | sed -r "s/(.*)-([0-9]{1,2})\.([0-9]{1,2})\..*/\1_\2.\3.orig.tar.xz/"`
 	cp $tarball $orig
-	echo "Tarball copdied successfully:" $orig
+	echo "Tarball copied successfully:" $orig
 
 	echo "Building package..."
 	cd ${tarball%.tar.xz}
