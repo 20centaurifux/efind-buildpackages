@@ -285,7 +285,7 @@ install_package()
 			txz) cmd=(/sbin/installpkg)
 			;;
 
-			rpm) cmd=(rpm -i --replacepkgs)
+			rpm) cmd=(rpm -Ui --replacepkgs)
 			;;
 
 			dpkg) cmd=(dpkg -i)
