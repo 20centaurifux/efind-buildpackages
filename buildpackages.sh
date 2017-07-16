@@ -187,7 +187,7 @@ build_txz()
 	sudo sh ./*.SlackBuild
 
 	echo "Moving package to" $PKG_DIR
-	local txz=$(basename $(ls -1 /tmp/${tarball%.tar.xz}-$(arch)*_bbsb.txz))
+	local txz=$(basename $(ls -1 /tmp/${tarball%.tar.xz}*_bbsb.txz))
 
 	sudo mv /tmp/$txz $PKG_DIR/
 
