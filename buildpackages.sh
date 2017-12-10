@@ -138,7 +138,7 @@ build_deb()
 
 	echo "Building package..."
 	cd ${tarball%.tar.xz}
-	dpkg-buildpackage -uc -us
+	LIBDIR=/usr/lib dpkg-buildpackage -uc -us
 	local debfile=`cat debian/files | cut -d" " -f1`
 
 	cd $WORKING_DIR
