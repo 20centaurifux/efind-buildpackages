@@ -138,7 +138,7 @@ build_deb()
 
 	echo "Building package..."
 	cd ${tarball%.tar.xz}
-	dpkg-buildpackage -uc -us
+	LIBDIR=/usr/lib dpkg-buildpackage -uc -us
 	local debfile=`cat debian/files | cut -d" " -f1`
 
 	cd $WORKING_DIR
@@ -187,7 +187,7 @@ build_txz()
 	sudo sh ./*.SlackBuild
 
 	echo "Moving package to" $PKG_DIR
-	local txz=$(basename $(ls -1 /tmp/${tarball%.tar.xz}-$(arch)*_bbsb.txz))
+	local txz=$(basename $(ls -1 /tmp/${tarball%.tar.xz}*_bbsb.txz))
 
 	sudo mv /tmp/$txz $PKG_DIR/
 
