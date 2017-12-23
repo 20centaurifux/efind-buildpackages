@@ -5,6 +5,6 @@ if [ -x /usr/bin/lsb_release ]; then
 
 	if [ $? -eq 0 ]; then
 		echo "Updating dependencies for OpenSUSE"
-		sed "s/gdk-pixbuf2/gdk-pixbuf/" efind-gdkpixbuf-0.1.1/efind-gdkpixbuf.spec -i
+		sed "s/gdk-pixbuf2/gdk-pixbuf/" efind-gdkpixbuf-0.2.0/efind-gdkpixbuf.spec -i
 	fi
 fi
