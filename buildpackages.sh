@@ -253,10 +253,8 @@ run_test_suite()
 	local pkg=$1
 	local testdir=$2
 
-	set +e
 	dialog --title "Run test suite" --backtitle "$pkg" --yesno "Do you want to run the test-suite of the installed package?" 7 70
 	local result=$?
-	set -e
 
 	if [ $result -eq 0 ]; then
 		echo "Running test-suite in directory" $testdir
@@ -297,7 +295,9 @@ install_package()
 		local testdir=$WORKING_DIR/${tarball%.tar.xz}/test
 
 		if [ -d $testdir ] && [ -x $testdir/run.sh ]; then
+			set +e
 			run_test_suite $pkg $testdir
+			set -e
 		fi
 	fi
 }
