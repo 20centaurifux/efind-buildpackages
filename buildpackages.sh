@@ -219,7 +219,7 @@ build_pkg()
 	makepkg
 
 	echo "Moving package to" $PKG_DIR
-	local pkg=`ls -1 ${tarball%.tar.xz}-*.pkg.tar.xz`
+	local pkg=`ls -1 ${tarball%.tar.xz}-*.pkg.tar.zst`
 	mv $pkg $PKG_DIR
 
 	Packages=(${Packages[@]} $pkg)
